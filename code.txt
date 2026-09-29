@@ -1,0 +1,89 @@
+clc;
+clear;
+close all;
+
+%% ================= Load ECG Data =================
+
+load("C:\Program Files\KMSpico\temp\6d5105f0-1d2f-4ccf-bb82-703d5bda0841_ECGData.zip.841\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise to TRAINING DATA =================
+snr = -10;   % Noise level in dB
+Xtrain_noisy = awgn(Xtrain, snr, 'measured');
+
+%% ================= RLS ADAPTIVE FILTER DENOISING =================
+M = 5;              % FIR filter order
+lambda = 0.99;      % Forgetting factor
+delta  = 0.01;      % Initialization constant
+
+Xtrain_denoised = zeros(size(Xtrain_noisy));
+
+for i = 1:size(Xtrain_noisy,1)
+
+    d = Xtrain(i,:)';          % Desired (clean ECG)
+    x = Xtrain_noisy(i,:)';    % Noisy ECG
+
+    w = zeros(M,1);            % Filter weights
+    P = (1/delta)*eye(M);      % Inverse correlation matrix
+    y = zeros(length(x),1);    % Output
+    e = zeros(length(x),1);    % Error
+
+    for n = M:length(x)
+        x_vec = x(n:-1:n-M+1);
+
+        y(n) = w' * x_vec;
+        e(n) = d(n) - y(n);
+
+        k = (P*x_vec) / (lambda + x_vec'*P*x_vec);
+        w = w + k*e(n);
+        P = (P - k*x_vec'*P) / lambda;
+    end
+
+    Xtrain_denoised(i,:) = y';
+end
+
+Xtrain = Xtrain_denoised;
+
+%% ================= PCA =================
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+
+% Use first 2 principal components
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ================= Classifier (Naive Bayes) =================
+%mdl = fitctree(scoreTrain95,Ytrain); % mdl is a ClassificationTree model.
+%mdl = fitcdiscr(scoreTrain95,Ytrain,'DiscrimType', 'linear');
+%mdl = fitcknn(scoreTrain95,Ytrain);
+%mdl = fitcnb(scoreTrain95,Ytrain);
+%mdl = fitcensemble(scoreTrain95,Ytrain);
+% Neural Network (generic)
+mdl = fitcnet(scoreTrain95, Ytrain, ...
+             'LayerSizes', [20], ...   % single hidden layer
+            'Standardize', true);
+
+
+%% ================= Test Projection =================
+scoreTest95 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest95);
+
+
+
+Accuracy = sum(categorical(Ytest) == categorical(YTest_predicted)) ...
+           * 100 / numel(Ytest)
+
+%% ================= Confusion Matrix =================
+%C = confusionmat(Ytest, YTest_predicted);
+
+%figure;
+%confusionchart(C);
+%title('Confusion Matrix (RLS Adaptive Filter Denoising)');
