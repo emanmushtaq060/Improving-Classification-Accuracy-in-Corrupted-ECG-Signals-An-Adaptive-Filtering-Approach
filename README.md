@@ -228,3 +228,5 @@ This project combines three areas:
 **Digital Signal Processing + Machine Learning + Biomedical Signal Analysis**
 
 and explores how signal-processing techniques can improve the reliability of machine learning models when working with noisy physiological signals.
+<img width="1640" height="1180" alt="Figure 1" src="https://github.com/user-attachments/assets/d051f937-5bf4-4fc5-b8e1-78c10cd3b6b7" />
+
