@@ -1,0 +1,41 @@
+clc
+
+load("C:\Program Files\KMSpico\temp\ceb69581-cfc8-46ac-9803-94596af1a8e2_ECGData.zip.8e2\ECGData.mat")
+Signals = ECGData.Data;
+Labels = ECGData.Labels;
+
+% ---- Add -10 dB Gaussian noise ----
+SNR = -10; % desired Signal-to-Noise Ratio in dB
+Signals_noisy = awgn(Signals, SNR, 'measured'); % adds noise to entire dataset
+
+% ---- Split into training and testing ----
+Xtrain = Signals_noisy([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+Xtest = Signals_noisy([86:96,116:126,152:162],:);
+Ytest = Labels([86:96,116:126,152:162],:);
+
+% ---- PCA ----
+[coeff, scoreTrain, ~, ~, explained, mu] = pca(Xtrain);
+idx = find(cumsum(explained) > 95, 1);
+
+% ---- Train classification model ----
+scoreTrain95 = scoreTrain(:,1:2);
+mdl = fitctree(scoreTrain95, Ytrain); % Classification Tree
+% mdl = fitcdiscr(scoreTrain95,Ytrain,'DiscrimType','linear');
+ %mdl = fitcknn(scoreTrain95,Ytrain);
+%mdl = fitcnb(scoreTrain95,Ytrain);
+ 
+dl = fitcensemble(scoreTrain95,Ytrain);
+
+% ---- Apply PCA to test set ----
+scoreTest95 = (Xtest - mu) * coeff(:,1:2);
+
+% ---- Predict and evaluate ----
+YTest_predicted = predict(mdl, scoreTest95);
+
+[ii,jj] = find(categorical(Ytest) == categorical(YTest_predicted));
+out = numel(ii);
+Accuracy = out * 100 / (size(Xtest,1))
+
+%C = confusionmat(Ytest, YTest_predicted)
+%confusionchart(C)
