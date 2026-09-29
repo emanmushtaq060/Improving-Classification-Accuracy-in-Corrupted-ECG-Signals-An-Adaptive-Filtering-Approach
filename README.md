@@ -163,17 +163,12 @@ The experiments showed that:
 
 ## Technologies Used
 
-* Python
 * MATLAB
 * Machine Learning
 * Digital Signal Processing
 * ECG Signal Processing
 * Adaptive Filtering
 * Neural Networks
-* Scikit-learn
-* NumPy
-* SciPy
-* Matplotlib
 
 ---
 
