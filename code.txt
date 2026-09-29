@@ -1,0 +1,90 @@
+clc; clear; close all;
+
+%% ================= Load ECG Data =================
+
+load("C:\Program Files\KMSpico\temp\c116177e-f8cb-4113-90bf-1d1d85168f2c_ECGData.zip.f2c\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise to TRAINING DATA =================
+snr = +10;   % Noise level
+Xtrain_noisy = awgn(Xtrain, snr, 'measured');
+
+%% ================= STEEPEST DESCENT DENOISING =================
+mu = 0.01;           % Step size
+iterations = 200;    % Iterations
+M = 5;               % FIR filter order
+
+Xtrain_denoised = zeros(size(Xtrain_noisy));
+
+for i = 1:size(Xtrain_noisy,1)
+
+    d = Xtrain(i,:)';           % Desired (clean ECG)
+    x = Xtrain_noisy(i,:)';     % Noisy ECG
+
+    % Initialize filter weights
+    w = zeros(M,1);
+
+    % Build input matrix
+    X = zeros(length(x), M);
+    for k = M:length(x)
+        X(k,:) = x(k:-1:k-M+1)';
+    end
+
+    % Steepest Descent algorithm
+    R = (X' * X) / length(x);   % Autocorrelation
+    p = (X' * d) / length(x);   % Cross-correlation
+
+    for iter = 1:iterations
+        grad = R*w - p;
+        w = w - mu * grad;
+    end
+
+    % Denoised signal
+    Xtrain_denoised(i,:) = (X * w)';
+end
+
+Xtrain = Xtrain_denoised;
+
+%% ================= PCA =================
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ================= Classifier (example: Naive Bayes) =================
+%% Train Classifier
+%mdl = fitctree(scoreTrain95,Ytrain); % mdl is a ClassificationTree model.
+%mdl = fitcdiscr(scoreTrain95,Ytrain,'DiscrimType', 'linear');
+%mdl = fitcknn(scoreTrain95,Ytrain);
+%mdl = fitcnb(scoreTrain95,Ytrain);
+%mdl = fitcensemble(scoreTrain95,Ytrain);
+% Neural Network (generic)
+mdl = fitcnet(scoreTrain95, Ytrain, ...
+             'LayerSizes', [20], ...   % single hidden layer
+             'Standardize', true);
+%% Test Set PCA
+scoreTest95 = (Xtest - mu_pca) * coeff(:,1:2);
+
+
+
+%% ================= Test Projection =================
+scoreTest95 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest95);
+
+
+Accuracy = sum(categorical(Ytest) == categorical(YTest_predicted)) ...
+           * 100 / numel(Ytest)
+
+%% ================= Confusion Matrix =================
+%C = confusionmat(Ytest, YTest_predicted);
+%figure;
+%confusionchart(C);
+%title('Confusion Matrix (Steepest Descent Denoising)');
