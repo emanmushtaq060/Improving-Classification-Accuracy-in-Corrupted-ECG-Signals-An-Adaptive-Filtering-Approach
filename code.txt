@@ -1,0 +1,47 @@
+clc; 
+clear; 
+close all;
+
+%% ================= Load Data =================
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise ONLY to Test Signals =================
+snr = -10;   % SNR in dB
+Xtest_noisy = awgn(Xtest, snr, 'measured');
+
+%% ================= Simple Wiener Filter Denoising =================
+Xtest_denoised = zeros(size(Xtest_noisy));
+
+for i = 1:size(Xtest_noisy,1)
+    Xtest_denoised(i,:) = wiener2(Xtest_noisy(i,:), [1 7]);
+end
+
+%% ================= PCA on CLEAN Training Data (FORCED 2 PCs) =================
+[coeff, scoreTrain, ~, ~, explained, mu] = pca(Xtrain);
+
+scoreTrain2 = scoreTrain(:,1:2);     % FORCE 2 COMPONENTS
+coeff2 = coeff(:,1:2);
+
+%% ================= Train Classifier =================
+mdl = fitcensemble(scoreTrain2, Ytrain);
+
+%% ================= PCA Transform on DENOISED Test Data =================
+scoreTest2 = (Xtest_denoised - mu) * coeff2;
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest2);
+
+%% ================= Accuracy =================
+%%Accuracy = mean(Ytest == YTest_predicted) * 100
+
+%% ================= Confusion Matrix =================
+C = confusionmat(Ytest, YTest_predicted);
+confusionchart(C);
