@@ -1,0 +1,70 @@
+clc;
+clear;
+close all;
+
+%% ================= Load ECG Data =================
+load("C:\Program Files\KMSpico\temp\99f576a3-e65b-4a99-8383-c930dad10762_ECGData.zip.762\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise to Training Data ONLY =================
+snr = -10;                 % << change noise level here
+Xtrain = awgn(Xtrain, snr, 'measured');
+
+%% ================= SIMPLE WIENER FILTER (1-D) =================
+Xtrain_wiener = zeros(size(Xtrain));
+
+for i = 1:size(Xtrain,1)
+    
+    x = Xtrain(i,:);
+    
+    % Estimate noise variance
+    noise_var = var(x - mean(x));
+    
+    % Signal variance
+    signal_var = var(x);
+    
+    % Wiener gain
+    H = signal_var ./ (signal_var + noise_var);
+    
+    % Apply Wiener filter
+    Xtrain_wiener(i,:) = H .* x;
+end
+
+Xtrain = Xtrain_wiener;
+
+%% ================= PCA =================
+[coeff, scoreTrain, ~, ~, explained, mu] = pca(Xtrain);
+
+idx = find(cumsum(explained) > 95, 1);
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ================= Classifier (choose ONE) =================
+mdl = fitcnb(scoreTrain95, Ytrain);     % Simple Naive Bayes
+
+% Other options:
+% mdl = fitctree(scoreTrain95, Ytrain);
+% mdl = fitcknn(scoreTrain95, Ytrain);
+% mdl = fitcdiscr(scoreTrain95, Ytrain,'DiscrimType','linear');
+
+%% ================= Test Projection =================
+scoreTest95 = (Xtest - mu) * coeff(:,1:2);
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest95);
+
+%% ================= Accuracy =================
+
+
+%% ================= Confusion Matrix =================
+C = confusionmat(Ytest, YTest_predicted);
+figure;
+confusionchart(C);
+title('Confusion Matrix (Simple Wiener + PCA + NB)');
