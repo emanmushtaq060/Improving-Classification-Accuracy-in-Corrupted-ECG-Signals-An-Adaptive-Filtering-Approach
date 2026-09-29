@@ -1,0 +1,83 @@
+clc;
+clear;
+close all;
+
+%% Load ECG Data
+load("C:\Program Files\KMSpico\temp\5bc2820a-452f-4b3d-9424-30cbd5385359_ECGData.zip.359\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train-Test Split (RAW SIGNALS) =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Gaussian Noise ONLY to TRAINING DATA =================
+SNR = +10;
+Xtrain_noisy = awgn(Xtrain, SNR, 'measured');
+
+%% ========== Kalman Filter Denoising (TRAINING ONLY) ==========
+Xtrain_KF = zeros(size(Xtrain));
+
+% Kalman parameters
+A = 1;
+H = 1;
+Q = 1e-5;
+R = 0.01;
+
+for i = 1:size(Xtrain_noisy,1)
+
+    z = Xtrain_noisy(i,:);
+    N = length(z);
+
+    x_hat = zeros(1,N);
+    P = 1;
+
+    x_hat(1) = z(1);
+
+    for k = 2:N
+        x_pred = A * x_hat(k-1);
+        P_pred = A * P * A' + Q;
+
+        K = P_pred * H' / (H * P_pred * H' + R);
+
+        x_hat(k) = x_pred + K * (z(k) - H * x_pred);
+        P = (1 - K * H) * P_pred;
+    end
+
+    Xtrain_KF(i,:) = x_hat;
+end
+
+%% ================= Use Denoised Training Data =================
+Xtrain = Xtrain_KF;
+
+%% ================= PCA (2 Components) =================
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+scoreTrain2 = scoreTrain(:,1:2);
+
+%% ================= Classifier (Neural Network) =================
+
+%mdl = fitctree(scoreTrain2,Ytrain); % mdl is a ClassificationTree model.
+%mdl = fitcdiscr(scoreTrain2,Ytrain,'DiscrimType', 'linear');
+%mdl = fitcknn(scoreTrain2,Ytrain);
+%mdl = fitcnb(scoreTrain2,Ytrain);
+%mdl = fitcensemble(scoreTrain2,Ytrain);
+
+mdl = fitcnet(scoreTrain2, Ytrain, ...
+             'LayerSizes', [20], ...
+             'Standardize', true);
+
+%% ================= Test Set PCA (CLEAN DATA) =================
+scoreTest2 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% ================= Predict & Accuracy =================
+Ypred = predict(mdl, scoreTest2);
+
+Accuracy = sum(categorical(Ytest) == categorical(Ypred)) ...
+           * 100 / numel(Ytest)
+
+%% ================= Confusion Matrix =================
+%C = confusionmat(Ytest, Ypred);
+%confusionchart(C);
