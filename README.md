@@ -108,6 +108,19 @@ The Kalman filter produced the greatest improvement among the evaluated adaptive
 Across the noisy conditions, Kalman-filter-based denoising improved classification accuracy by an average of approximately **11.5 percentage points**, with the largest improvement of **18.7 percentage points** observed when noise was introduced into the training data only.
 
 ---
+### Arrhythmia ECG
+
+<img width="460" height="245" alt="dsdfs" src="https://github.com/user-attachments/assets/67fc4f91-36cf-4a96-826c-1d84d368fd47" />
+
+
+### Congestive Heart Failure (CHF) ECG
+
+<img width="465" height="248" alt="noisy signal" src="https://github.com/user-attachments/assets/b41a457f-7651-4beb-b4c6-e6568af3ff01" />
+
+
+### Normal Sinus Rhythm (NSR) ECG
+
+<img width="458" height="253" alt="clean" src="https://github.com/user-attachments/assets/44bc5e76-be45-44e8-a506-d198a92d864f" />
 
 ## Methodology
 
@@ -228,5 +241,5 @@ This project combines three areas:
 **Digital Signal Processing + Machine Learning + Biomedical Signal Analysis**
 
 and explores how signal-processing techniques can improve the reliability of machine learning models when working with noisy physiological signals.
-<img width="1640" height="1180" alt="Figure 1" src="https://github.com/user-attachments/assets/d051f937-5bf4-4fc5-b8e1-78c10cd3b6b7" />
+
 
