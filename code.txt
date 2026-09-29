@@ -1,0 +1,70 @@
+clc;
+clear;
+close all;
+
+%% ================= Load Data =================
+
+
+load("C:\Program Files\KMSpico\temp\21be108e-97a9-4c05-9c7e-170587960299_ECGData.zip.299\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise ONLY to Test Signals =================
+snr = +10;   % SNR in dB
+Xtest_noisy = awgn(Xtest, snr, 'measured');
+
+%% ================= Steepest Descent Denoising =================
+mu = 0.001;          % step size (learning rate)
+numIter = 100;       % iterations
+filterOrder = 8;     % filter length
+
+Xtest_denoised = zeros(size(Xtest_noisy));
+
+% Use mean of training signals as reference (desired signal)
+d = mean(Xtrain,1);
+
+for i = 1:size(Xtest_noisy,1)
+    
+    x = Xtest_noisy(i,:);
+    w = zeros(filterOrder,1);
+    
+    for k = filterOrder:length(x)
+        x_vec = x(k:-1:k-filterOrder+1).';
+        y = w.' * x_vec;
+        e = d(k) - y;
+        
+        % Steepest Descent weight update
+        w = w + mu * e * x_vec;
+        
+        Xtest_denoised(i,k) = y;
+    end
+end
+
+%% ================= PCA on CLEAN Training Data (FORCED 2 PCs) =================
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+
+scoreTrain2 = scoreTrain(:,1:2);   % FORCE 2 COMPONENTS
+coeff2 = coeff(:,1:2);
+
+%% ================= Train Classifier =================
+mdl = fitcensemble(scoreTrain2, Ytrain);
+
+%% ================= PCA Transform on DENOISED Test Data =================
+scoreTest2 = (Xtest_denoised - mu_pca) * coeff2;
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest2);
+
+%% ================= Accuracy =================
+%Accuracy = mean(Ytest == YTest_predicted) * 100
+
+%% ================= Confusion Matrix =================
+C = confusionmat(Ytest, YTest_predicted);
+confusionchart(C);
