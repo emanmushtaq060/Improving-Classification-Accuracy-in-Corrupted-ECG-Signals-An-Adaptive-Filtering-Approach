@@ -1,0 +1,45 @@
+clc; clear;
+
+%% Load data
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% Add Gaussian noise (10 dB SNR)
+SNR = 10;
+Signals_noisy = awgn(Signals, SNR, 'measured');
+
+%% Apply Wiener filter
+Signals_wiener = zeros(size(Signals_noisy));
+
+for i = 1:size(Signals_noisy,1)
+    Signals_wiener(i,:) = wiener2(Signals_noisy(i,:), [1 5]);
+end
+
+%% Train-Test Split
+Xtrain = Signals_wiener([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals_wiener([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% PCA
+[coeff, scoreTrain, ~, ~, explained, mu] = pca(Xtrain);
+idx = find(cumsum(explained) > 95, 1);
+
+scoreTrain95 = scoreTrain(:,1:idx);
+
+%% Train Classifier (Ensemble)
+mdl = fitcensemble(scoreTrain95, Ytrain);
+
+%% Apply PCA to Test Set
+scoreTest95 = (Xtest - mu) * coeff(:,1:idx);
+
+%% Predict & Accuracy
+Ypred = predict(mdl, scoreTest95);
+
+Accuracy = sum(categorical(Ytest) == categorical(Ypred)) ...
+           * 100 / numel(Ytest)
+
+%% Confusion Matrix
+C = confusionmat(Ytest, Ypred);
+confusionchart(C);
