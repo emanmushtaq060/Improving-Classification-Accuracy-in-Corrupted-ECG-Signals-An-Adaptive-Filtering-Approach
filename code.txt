@@ -1,0 +1,93 @@
+clc
+clear
+close all
+
+load("C:\Program Files\KMSpico\temp\81f688cc-1c58-42fc-af31-9ba117e14a6b_ECGData.zip.a6b\ECGData.mat")
+
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise ONLY to Test Signals =================
+snr = -10;   % Noise level
+Xtest_noisy = awgn(Xtest, snr, 'measured');
+
+%% ================= Kalman Filter Parameters =================
+Q = 1e-5;      % Process noise covariance
+R = 0.1;       % Measurement noise covariance
+
+Xtest_denoised = zeros(size(Xtest_noisy));
+
+%% ================= Kalman Filtering =================
+for i = 1:size(Xtest_noisy,1)
+
+    z = Xtest_noisy(i,:);     % Noisy ECG signal
+    N = length(z);
+
+    xhat = zeros(1,N);        % Estimated signal
+    P = zeros(1,N);           % Error covariance
+
+    % Initial conditions
+    xhat(1) = z(1);
+    P(1) = 1;
+
+    for k = 2:N
+
+        % Prediction step
+        xhat_minus = xhat(k-1);
+        P_minus = P(k-1) + Q;
+
+        % Kalman Gain
+        K = P_minus / (P_minus + R);
+
+        % Update step
+        xhat(k) = xhat_minus + K*(z(k) - xhat_minus);
+        P(k) = (1 - K)*P_minus;
+
+    end
+
+    Xtest_denoised(i,:) = xhat;
+
+end
+
+%% ================= PCA on CLEAN Training Data =================
+[coeff, scoreTrain, ~, ~, explained, mu] = pca(Xtrain);
+
+idx = find(cumsum(explained) > 95, 1);
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ================= Select Classifier =================
+% mdl = fitctree(scoreTrain95, Ytrain);      % Decision Tree
+% mdl = fitcdiscr(scoreTrain95, Ytrain);     % LDA
+% mdl = fitcknn(scoreTrain95, Ytrain);       % KNN
+% mdl = fitcnb(scoreTrain95, Ytrain);        % Naive Bayes
+% mdl = fitcensemble(scoreTrain95, Ytrain);  % Ensemble
+
+% Neural Network
+mdl = fitcnet(scoreTrain95, Ytrain, ...
+              'LayerSizes',[20], ...
+              'Standardize',true);
+
+%% ================= PCA Transform on DENOISED Test Data =================
+scoreTest95 = (Xtest_denoised - mu) * coeff(:,1:2);
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest95);
+
+Ytest_cat = categorical(string(Ytest));
+Ypred_cat = categorical(string(YTest_predicted));
+
+Accuracy = mean(Ypred_cat == Ytest_cat) * 100
+
+%% ================= Confusion Matrix =================
+C = confusionmat(Ytest, YTest_predicted)
+
+figure;
+confusionchart(Ytest, YTest_predicted);
+title(['Kalman Filter + Neural Network (Accuracy = ', num2str(Accuracy,'%.2f'), '%)']);
