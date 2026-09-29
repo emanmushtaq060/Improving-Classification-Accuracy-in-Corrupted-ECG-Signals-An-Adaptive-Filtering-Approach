@@ -1,0 +1,65 @@
+clc; clear;
+
+load("C:\Program Files\KMSpico\temp\567e9cca-e2f8-435d-bb28-e7ac791e015c_ECGData.zip.15c\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% Add Gaussian noise (-10 dB SNR)
+SNR = +10;
+Signals_noisy = awgn(Signals, SNR, 'measured');
+
+%% ========== Steepest Descent Adaptive Filter (SAFE VERSION) ==========
+M = 20;          % Filter order
+mu = 0.001;     % Step size (small for stability)
+
+Signals_SD = zeros(size(Signals_noisy));
+
+for i = 1:size(Signals_noisy,1)
+
+    x = Signals_noisy(i,:);      % Noisy ECG (row)
+    N = length(x);
+
+    % Initialize
+    w = zeros(1,M);
+    y = zeros(1,N);
+
+    % Zero-padding input
+    x_pad = [zeros(1,M-1), x];
+
+    for n = 1:N
+        xn = x_pad(n+M-1:-1:n);     % Always valid indexing
+        y(n) = w * xn';             % Filter output
+        e = x(n) - y(n);            % Error
+        w = w + mu * e * xn;        % Steepest Descent update
+    end
+
+    Signals_SD(i,:) = y;
+end
+
+
+%% Train-Test Split
+Xtrain = Signals_SD([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals_SD([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% PCA (2 Components)
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+scoreTrain2 = scoreTrain(:,1:2);
+
+%% Train Classifier
+mdl = fitcensemble(scoreTrain2, Ytrain);
+
+%% Test Set PCA
+scoreTest2 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% Predict & Accuracy
+Ypred = predict(mdl, scoreTest2);
+
+Accuracy = sum(categorical(Ytest) == categorical(Ypred)) ...
+           * 100 / numel(Ytest)
+
+%% Confusion Matrix
+C = confusionmat(Ytest, Ypred);
+confusionchart(C);
