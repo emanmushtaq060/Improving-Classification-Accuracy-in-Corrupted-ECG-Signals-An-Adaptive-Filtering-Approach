@@ -1,0 +1,71 @@
+clc
+clear
+close all
+
+load("C:\Program Files\KMSpico\temp\81f688cc-1c58-42fc-af31-9ba117e14a6b_ECGData.zip.a6b\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise ONLY to test signals =================
+snr = -10;   % noise level
+Xtest_noisy = awgn(Xtest, snr, 'measured');
+
+%% ================= LMS Filter Parameters =================
+mu_lms = 0.01;      % step size
+M = 8;              % filter order
+
+Xtest_denoised = zeros(size(Xtest_noisy));
+
+%% ================= LMS Noise Cancellation =================
+for i = 1:size(Xtest_noisy,1)
+
+    d = Xtest_noisy(i,:);                 % noisy ECG (desired signal)
+    ref_noise = randn(1,length(d));       % reference noise
+
+    lms = dsp.LMSFilter('Length', M, ...
+                        'StepSize', mu_lms);
+
+    [y, e] = lms(ref_noise', d');          % e = denoised signal
+    Xtest_denoised(i,:) = e';
+
+end
+
+%% ================= PCA on CLEAN training data =================
+[coeff, scoreTrain, ~, ~, explained, mu] = pca(Xtrain);
+
+idx = find(cumsum(explained) > 95, 1);     %#ok<NASGU>
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ================= Select Classifier =================
+%mdl = fitctree(scoreTrain95, Ytrain);           % Decision Tree
+% mdl = fitcdiscr(scoreTrain95, Ytrain);          % LDA
+% mdl = fitcknn(scoreTrain95, Ytrain);            % KNN
+% mdl = fitcnb(scoreTrain95, Ytrain);             % Naive Bayes
+%mdl = fitcensemble(scoreTrain95, Ytrain);         % Ensemble
+% Neural Network (generic)
+mdl = fitcnet(scoreTrain95, Ytrain, ...
+            'LayerSizes', [20], ...   % single hidden layer
+             'Standardize', true);
+
+
+
+%% ================= PCA Transform on DENOISED test data =================
+scoreTest95 = (Xtest_denoised - mu) * coeff(:,1:2);
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest95);  % <- this actually predicts labels
+
+Ytest_cat = categorical(string(Ytest));
+Ypred_cat = categorical(string(YTest_predicted));
+
+Accuracy = mean(Ypred_cat == Ytest_cat) * 100
+
+%C = confusionmat(Ytest, YTest_predicted);
+
