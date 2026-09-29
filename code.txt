@@ -1,0 +1,68 @@
+clc;
+clear;
+close all;
+
+%% ================= Load ECG Data =================
+load("C:\Program Files\KMSpico\temp\d25647dc-e7a2-4823-b44d-fdc74869c89e_ECGData.zip.89e\ECGData.mat")
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% ================= Train / Test Split =================
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ================= Add Noise to TRAINING DATA =================
+snr = -10;   % Noise level in dB
+Xtrain_noisy = awgn(Xtrain, snr, 'measured');
+
+%% ================= LMS ADAPTIVE FILTER DENOISING =================
+mu = 0.001;      % Step size
+M  = 5;          % FIR filter order
+
+Xtrain_denoised = zeros(size(Xtrain_noisy));
+
+for i = 1:size(Xtrain_noisy,1)
+
+    d = Xtrain(i,:)';           % Desired (clean ECG)
+    x = Xtrain_noisy(i,:)';     % Noisy ECG
+
+    w = zeros(M,1);             % Filter weights
+    y = zeros(length(x),1);     % Output
+    e = zeros(length(x),1);     % Error
+
+    for n = M:length(x)
+        x_vec = x(n:-1:n-M+1);
+        y(n) = w' * x_vec;
+        e(n) = d(n) - y(n);
+        w = w + mu * e(n) * x_vec;
+    end
+
+    Xtrain_denoised(i,:) = y';
+end
+
+Xtrain = Xtrain_denoised;
+
+%% ================= PCA =================
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+
+% Use first 2 principal components
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ================= Classifier (Naive Bayes) =================
+mdl = fitcnb(scoreTrain95, Ytrain);
+
+%% ================= Test Projection =================
+scoreTest95 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% ================= Prediction =================
+YTest_predicted = predict(mdl, scoreTest95);
+
+%% ================= Confusion Matrix =================
+C = confusionmat(Ytest, YTest_predicted);
+
+figure;
+confusionchart(C);
+title('Confusion Matrix (LMS Adaptive Filter Denoising)');
