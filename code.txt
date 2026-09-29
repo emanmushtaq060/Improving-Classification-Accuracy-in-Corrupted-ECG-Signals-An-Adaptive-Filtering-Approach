@@ -1,0 +1,47 @@
+clc
+
+load("C:\Program Files\KMSpico\temp\66d3e91f-5e77-4be8-8be5-62ad0c8ffabe_ECGData.zip.abe\ECGData.mat")
+
+Signals = ECGData.Data;
+Labels = ECGData.Labels;
+
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ---- Add noise ONLY to test signals ----
+snr = -10;   % CHANGE NOISE HERE
+Xtest_noisy = awgn(Xtest, snr, 'measured');
+
+%% PCA on clean training data
+[coeff,scoreTrain,~,~,explained,mu] = pca(Xtrain);
+idx = find(cumsum(explained) > 95, 1);
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ---- Select your model ----
+% Decision Tree
+%mdl = fitctree(scoreTrain95, Ytrain);
+% LDA
+%mdl = fitcdiscr(scoreTrain95, Ytrain, 'DiscrimType','linear');
+
+% KNN
+%mdl = fitcknn(scoreTrain95, Ytrain);
+
+% Naive Bayes
+%mdl = fitcnb(scoreTrain95, Ytrain);
+
+% Ensemble
+mdl = fitcensemble(scoreTrain95, Ytrain);
+
+%% Transform **noisy** test data using PCA from training
+scoreTest95 = (Xtest_noisy - mu) * coeff(:,1:2);
+
+%% Predict
+YTest_predicted = predict(mdl, scoreTest95);
+
+[ii,~] = find(categorical(Ytest) == categorical(YTest_predicted));
+Accuracy = numel(ii) * 100 / size(Xtest,1)
+
+C = confusionmat(Ytest, YTest_predicted);
+confusionchart(C)
