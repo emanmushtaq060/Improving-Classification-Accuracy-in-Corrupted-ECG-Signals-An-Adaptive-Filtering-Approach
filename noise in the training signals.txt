@@ -1,0 +1,47 @@
+clc
+Signals = ECGData.Data;
+Labels = ECGData.Labels;
+
+Xtrain = Signals([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+Xtest  = Signals([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% ---- Add noise to training data only ----
+snr = +10;   % <<<<<< CHANGE NOISE LEVEL HERE
+Xtrain = awgn(Xtrain, snr, 'measured');
+
+%% PCA on noisy training data
+[coeff,scoreTrain,~,~,explained,mu] = pca(Xtrain);
+
+idx = find(cumsum(explained) > 95, 1);
+
+scoreTrain95 = scoreTrain(:,1:2);
+
+%% ---- ALL TRAINING MODEL OPTIONS ----
+% Classification Tree
+%mdl = fitctree(scoreTrain95, Ytrain);
+
+% Linear Discriminant
+ %mdl = fitcdiscr(scoreTrain95, Ytrain,'DiscrimType','linear');
+
+% KNN
+%mdl = fitcknn(scoreTrain95, Ytrain);
+
+% Naive Bayes
+% mdl = fitcnb(scoreTrain95, Ytrain);
+
+% Ensemble
+%mdl = fitcensemble(scoreTrain95, Ytrain);
+
+%% Transform test data using training PCA
+scoreTest95 = (Xtest - mu) * coeff(:,1:2);
+
+YTest_predicted = predict(mdl, scoreTest95);
+
+[ii,~] = find(categorical(Ytest) == categorical(YTest_predicted));
+out = numel(ii);
+Accuracy = out * 100 / size(Xtest,1)
+
+C = confusionmat(Ytest, YTest_predicted);
+confusionchart(C)
