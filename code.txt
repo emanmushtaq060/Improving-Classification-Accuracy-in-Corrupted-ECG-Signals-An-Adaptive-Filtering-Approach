@@ -1,0 +1,94 @@
+clc;
+clear;
+close all;
+
+%% Load ECG Data
+load("C:\Program Files\KMSpico\temp\a6cfd612-a0ad-480d-a0ff-2f9b9e79ac07_ECGData.zip.c07\ECGData.mat")
+
+Signals = ECGData.Data;
+Labels  = ECGData.Labels;
+
+%% Add Gaussian Noise
+SNR = +10;
+Signals_noisy = awgn(Signals, SNR, 'measured');
+
+%% ========== Kalman Filter Denoising ==========
+Signals_KF = zeros(size(Signals));
+
+% Kalman parameters
+A = 1;          % State transition
+H = 1;          % Measurement matrix
+Q = 1e-5;       % Process noise covariance
+R = 0.01;       % Measurement noise covariance
+
+for i = 1:size(Signals,1)
+
+    z = Signals_noisy(i,:);   % Noisy ECG
+    N = length(z);
+
+    x_hat = zeros(1,N);      % Estimated ECG
+    P = 1;                   % Error covariance
+
+    % Initial state
+    x_hat(1) = z(1);
+
+    for k = 2:N
+        % Prediction
+        x_pred = A * x_hat(k-1);
+        P_pred = A * P * A' + Q;
+
+        % Kalman Gain
+        K = P_pred * H' / (H * P_pred * H' + R);
+
+        % Update
+        x_hat(k) = x_pred + K * (z(k) - H * x_pred);
+        P = (1 - K * H) * P_pred;
+    end
+
+    Signals_KF(i,:) = x_hat;
+end
+
+%% Train-Test Split
+Xtrain = Signals_KF([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals_KF([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% PCA (2 Components)
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+scoreTrain2 = scoreTrain(:,1:2);
+
+%% Train Classifier (Ensemble)
+%mdl = fitctree(scoreTrain2,Ytrain); % mdl is a ClassificationTree model.
+%mdl = fitcdiscr(scoreTrain2,Ytrain,'DiscrimType', 'linear');
+%mdl = fitcknn(scoreTrain2,Ytrain);
+%mdl = fitcnb(scoreTrain2,Ytrain);
+%mdl = fitcensemble(scoreTrain2,Ytrain);
+mdl = fitcnet(scoreTrain2, Ytrain, ...
+             'LayerSizes', [20], ...
+              'Standardize', true);
+%% Test Set PCA
+scoreTest2 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% Predict & Accuracy
+Ypred = predict(mdl, scoreTest2);
+
+Accuracy = sum(categorical(Ytest) == categorical(Ypred)) ...
+           * 100 / numel(Ytest)
+
+%% Confusion Matrix
+%C = confusionmat(Ytest, Ypred);
+%confusionchart(C);
+
+%% Plot Example ECG Signal
+%figure;
+%idx = 1;
+%plot(Signals(idx,:), 'k', 'LineWidth', 1.2); hold on;
+%plot(Signals_noisy(idx,:), 'r');
+%plot(Signals_KF(idx,:), 'b', 'LineWidth', 1.2);
+%legend('Original ECG','Noisy ECG','Kalman Denoised ECG');
+%title('ECG Denoising using Kalman Filter');
+%xlabel('Samples');
+%ylabel('Amplitude');
+%grid on;
