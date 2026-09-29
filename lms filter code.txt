@@ -1,0 +1,91 @@
+clc; 
+clear;
+close all;
+
+%% Load ECG Data
+load("C:\Program Files\KMSpico\temp\5f09e7ea-9916-486b-b330-0d86142060bd_ECGData.zip.0bd\ECGData.mat")
+Signals = ECGData.Data;     % Clean ECG signals
+Labels  = ECGData.Labels;   % Class labels
+
+%% Add Gaussian Noise (+10 dB SNR)
+SNR = +10;
+Signals_noisy = awgn(Signals, SNR, 'measured');
+
+%% ========== LMS Adaptive Noise Canceller ==========
+M  = 20;        % Filter order
+mu = 0.01;      % Step size
+
+Signals_LMS = zeros(size(Signals));
+
+for i = 1:size(Signals,1)
+
+    s = Signals(i,:);           % Clean ECG (only for simulation)
+    d = Signals_noisy(i,:);     % Noisy ECG (desired signal)
+
+    noise_ref = d - s;          % Reference noise
+    N = length(d);
+
+    % Initialization
+    w = zeros(M,1);
+    y = zeros(1,N);
+    e = zeros(1,N);
+
+    % Zero-padding
+    noise_pad = [zeros(1,M-1), noise_ref];
+
+    for n = 1:N
+        x = noise_pad(n+M-1:-1:n)';   % Reference input
+        y(n) = w' * x;                % Estimated noise
+        e(n) = d(n) - y(n);           % Denoised ECG
+        w = w + mu * e(n) * x;        % LMS update
+    end
+
+    Signals_LMS(i,:) = e;
+end
+
+%% Train-Test Split
+Xtrain = Signals_LMS([1:85,97:115,127:151],:);
+Ytrain = Labels([1:85,97:115,127:151],:);
+
+Xtest  = Signals_LMS([86:96,116:126,152:162],:);
+Ytest  = Labels([86:96,116:126,152:162],:);
+
+%% PCA (2 Components)
+[coeff, scoreTrain, ~, ~, explained, mu_pca] = pca(Xtrain);
+scoreTrain2 = scoreTrain(:,1:2);
+
+%% Train Classifier (Ensemble)
+%mdl = fitctree(scoreTrain2,Ytrain); % mdl is a ClassificationTree model.
+%mdl = fitcdiscr(scoreTrain2,Ytrain,'DiscrimType', 'linear');
+%mdl = fitcknn(scoreTrain2,Ytrain);
+%mdl = fitcnb(scoreTrain2,Ytrain);
+%mdl = fitcensemble(scoreTrain2,Ytrain);
+% Neural Network (generic)
+mdl = fitcnet(scoreTrain2, Ytrain, ...
+          'LayerSizes', [20], ...   % single hidden layer
+            'Standardize', true);
+
+%% Test Set PCA
+scoreTest2 = (Xtest - mu_pca) * coeff(:,1:2);
+
+%% Predict & Accuracy
+Ypred = predict(mdl, scoreTest2);
+
+Accuracy = sum(categorical(Ytest) == categorical(Ypred)) ...
+           * 100 / numel(Ytest)
+
+%% Confusion Matrix
+%C = confusionmat(Ytest, Ypred);
+%confusionchart(C);
+
+%% Plot Example ECG Signal
+%figure;
+%idx = 1;
+%plot(Signals(idx,:), 'k', 'LineWidth', 1.2); hold on;
+%plot(Signals_noisy(idx,:), 'r');
+%plot(Signals_LMS(idx,:), 'b');
+%legend('Original ECG','Noisy ECG','LMS Denoised ECG');
+%title('ECG Denoising using LMS Adaptive Filter');
+%xlabel('Samples');
+%ylabel('Amplitude');
+%grid on;
